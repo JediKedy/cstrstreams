@@ -17,10 +17,14 @@ class DiziPal : MainAPI() {
     override val hasQuickSearch       = true
     override val supportedTypes       = setOf(TvType.TvSeries, TvType.Movie)
 
-    // ! CloudFlare bypass
-    override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/-cloudstream/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
-    override var sequentialMainPageDelay       = 250L // ? 0.25 saniye
-    // override var sequentialMainPageScrollDelay = 250L // ? 0.25 saniye
+    // Cloudflare korumasını aşmak için gerekli
+    override val sequentialMainPage = true
+    override val sequentialMainPageDelay = 1500L
+
+    // User-Agent başlığı
+    private val userAgentHeaders = mapOf(
+        "User-Agent" to "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36"
+    )
 
     override val mainPage = mainPageOf(
         "${mainUrl}/diziler/son-bolumler"                          to "Son Bölümler",
