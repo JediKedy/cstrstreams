@@ -8,6 +8,11 @@ import com.lagradost.cloudstream3.*
 import com.lagradost.cloudstream3.utils.*
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import com.fasterxml.jackson.module.kotlin.readValue
+import com.lagradost.cloudstream3.network.CloudflareKiller
+import okhttp3.Interceptor
+import okhttp3.Response
+import org.jsoup.Jsoup
+import java.net.URLEncoder
 
 class DiziPal : MainAPI() {
     override var mainUrl              = "https://dizipal953.com"
@@ -18,9 +23,28 @@ class DiziPal : MainAPI() {
     override val supportedTypes       = setOf(TvType.TvSeries, TvType.Movie)
 
     // ! CloudFlare bypass
+// ! CloudFlare bypass
     override var sequentialMainPage = true        // * https://recloudstream.github.io/dokka/-cloudstream/com.lagradost.cloudstream3/-main-a-p-i/index.html#-2049735995%2FProperties%2F101969414
-    override var sequentialMainPageDelay       = 250L // ? 0.25 saniye
-    // override var sequentialMainPageScrollDelay = 250L // ? 0.25 saniye
+    override var sequentialMainPageDelay       = 50L  // ? 0.05 saniye
+    override var sequentialMainPageScrollDelay = 50L  // ? 0.05 saniye
+
+    // ! CloudFlare v2
+    private val cloudflareKiller by lazy { CloudflareKiller() }
+    private val interceptor      by lazy { CloudflareInterceptor(cloudflareKiller) }
+
+    class CloudflareInterceptor(private val cloudflareKiller: CloudflareKiller): Interceptor {
+        override fun intercept(chain: Interceptor.Chain): Response {
+            val request  = chain.request()
+            val response = chain.proceed(request)
+            val doc      = Jsoup.parse(response.peekBody(1024 * 1024).string())
+
+            if (doc.html().contains("Just a moment")) {
+                return cloudflareKiller.intercept(chain)
+            }
+
+            return response
+        }
+    }
 
     override val mainPage = mainPageOf(
         "${mainUrl}/diziler/son-bolumler"                          to "Son Bölümler",
@@ -66,8 +90,9 @@ class DiziPal : MainAPI() {
 
     override suspend fun getMainPage(page: Int, request: MainPageRequest): HomePageResponse {
         val document = app.get(
-            request.data,
+            request.data, timeout = 10000, interceptor = interceptor, headers = getHeaders(mainUrl)
         ).document
+        Log.d("DZP", "Ana sayfa HTML içeriği:\n${document.outerHtml()}")
         val home     = if (request.data.contains("/diziler/son-bolumler")) {
             document.select("div.episode-item").mapNotNull { it.sonBolumler() } 
         } else {
@@ -137,7 +162,7 @@ class DiziPal : MainAPI() {
     override suspend fun quickSearch(query: String): List<SearchResponse> = search(query)
 
     override suspend fun load(url: String): LoadResponse? {
-        val document = app.get(url).document
+        val document = app.get(url, interceptor = interceptor, headers = getHeaders(mainUrl)).document
 
         val poster      = fixUrlNull(document.selectFirst("[property='og:image']")?.attr("content"))
         val year        = document.selectXpath("//div[text()='Yapım Yılı']//following-sibling::div").text().trim().toIntOrNull()
@@ -186,7 +211,7 @@ class DiziPal : MainAPI() {
 
     override suspend fun loadLinks(data: String, isCasting: Boolean, subtitleCallback: (SubtitleFile) -> Unit, callback: (ExtractorLink) -> Unit): Boolean {
         Log.d("DZP", "data » $data")
-        val document = app.get(data).document
+        val document = app.get(data, interceptor = interceptor, headers = getHeaders(mainUrl)).document
         val iframe   = document.selectFirst(".series-player-container iframe")?.attr("src") ?: document.selectFirst("div#vast_new iframe")?.attr("src") ?: return false
         Log.d("DZP", "iframe » $iframe")
 
@@ -246,4 +271,12 @@ class DiziPal : MainAPI() {
 
         return true
     }
+        companion object {
+        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36"
+
+        private fun getHeaders(referer: String): Map<String, String> = mapOf(
+            "Accept" to "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "User-Agent" to USER_AGENT,
+        )
+        }
 }
